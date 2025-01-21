@@ -391,6 +391,11 @@ macro_rules! adc_hal {
                   to `cr2` just before calling this function
                 */
                 fn convert(&mut self, chan: u8) -> u16 {
+                    self.start_convert(chan);
+                    self.read_convert()
+                }
+
+                pub fn start_convert(&mut self, chan: u8) {
                     // Dummy read in case something accidentally triggered
                     // a conversion by writing to CR2 without changing any
                     // of the bits
@@ -405,11 +410,16 @@ macro_rules! adc_hal {
                         w.align().bit(self.align.into())
                     });
                     while self.rb.cr2().read().swstart().bit_is_set() {}
+                }
+
+                pub fn check_convert(&mut self) -> bool {
+                    self.rb.sr().read().eoc().bit_is_set()
+                }
+
+                pub fn read_convert(&mut self) -> u16 {
                     // ADC wait for conversion results
                     while self.rb.sr().read().eoc().bit_is_clear() {}
-
-                    let res = self.rb.dr().read().data().bits();
-                    res
+                    self.rb.dr().read().data().bits()
                 }
 
                 /// Powers down the ADC, disables the ADC clock and releases the ADC Peripheral
