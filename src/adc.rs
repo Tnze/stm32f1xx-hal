@@ -390,12 +390,12 @@ macro_rules! adc_hal {
                   does not. Therefore, ensure you do not do any no-op modifications
                   to `cr2` just before calling this function
                 */
-                fn convert(&mut self, chan: u8) -> u16 {
+                pub fn read_blocked(&mut self, chan: u8) -> u16 {
                     self.start_convert(chan);
                     self.read_convert()
                 }
 
-                pub fn start_convert(&mut self, chan: u8) {
+                fn start_convert(&mut self, chan: u8) {
                     // Dummy read in case something accidentally triggered
                     // a conversion by writing to CR2 without changing any
                     // of the bits
@@ -412,11 +412,11 @@ macro_rules! adc_hal {
                     while self.rb.cr2().read().swstart().bit_is_set() {}
                 }
 
-                pub fn check_convert(&mut self) -> bool {
+                fn check_convert(&mut self) -> bool {
                     self.rb.sr().read().eoc().bit_is_set()
                 }
 
-                pub fn read_convert(&mut self) -> u16 {
+                fn read_convert(&mut self) -> u16 {
                     // ADC wait for conversion results
                     while self.rb.sr().read().eoc().bit_is_clear() {}
                     self.rb.dr().read().data().bits()
@@ -477,8 +477,13 @@ macro_rules! adc_hal {
                     type Error = ();
 
                     fn read(&mut self, _pin: &mut PIN) -> nb::Result<WORD, Self::Error> {
-                        let res = self.convert(PIN::channel());
-                        Ok(res.into())
+                        if self.check_convert() {
+                            // BUG: we should check whether current channel ID matches.
+                            Ok(self.read_convert().into())
+                        } else {
+                            self.start_convert(PIN::channel());
+                            Err(nb::Error::WouldBlock)
+                        }
                     }
                 }
 
@@ -501,7 +506,7 @@ impl Adc<pac::ADC1> {
             false
         };
 
-        let val = self.convert(chan);
+        let val = self.read_blocked(chan);
 
         if tsv_off {
             self.rb.cr2().modify(|_, w| w.tsvrefe().clear_bit());
